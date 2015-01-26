@@ -13,4 +13,8 @@ endif
 
 export GCCPLUGINS_DIR HOSTLIBS
 
+$(HOSTLIBS)-y := fuzz_instrument.so
+
 always := $($(HOSTLIBS)-y)
+
+fuzz_instrument-objs := fuzz_instrument.o
