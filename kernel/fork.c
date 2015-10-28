@@ -141,9 +141,10 @@ static inline struct task_struct *alloc_task_struct_node(int node)
 {
 	return kmem_cache_alloc_node(task_struct_cachep, GFP_KERNEL, node);
 }
-
+void afl_task_release(struct task_struct* tsk);
 static inline void free_task_struct(struct task_struct *tsk)
 {
+	afl_task_release(tsk);
 	kmem_cache_free(task_struct_cachep, tsk);
 }
 #endif
@@ -501,6 +502,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 
 	if (err)
 		goto free_stack;
+
+	spin_lock_init(&tsk->afl_lock);
+	tsk->afl_area = NULL;
+	tsk->afl_counter = 0;
 
 #ifdef CONFIG_SECCOMP
 	/*
