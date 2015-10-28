@@ -32,16 +32,12 @@ static DEFINE_SPINLOCK(areas_lock);
 
 static void afl_get_area(struct afl_area* area)
 {
-	afl_func_entry();
-
 	kref_get(&area->kref);
 }
 
 static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
 {
 	struct afl_area* area = NULL;
-
-	afl_func_entry();
 
 	spin_lock(&areas_lock);
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
@@ -77,16 +73,12 @@ static void _afl_free_area(struct kref* kref)
 
 static void afl_put_area(struct afl_area* area)
 {
-	afl_func_entry();
-
 	kref_put(&area->kref, _afl_free_area);
 }
 
 static void afl_maybe_log(unsigned short location)
 {
 	struct afl_area* area = NULL;
-
-	afl_func_entry();
 
 	area = afl_get_area_from_task(current);
 	if (!area) {
