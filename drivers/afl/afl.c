@@ -28,7 +28,7 @@
 #endif
 
 static DEFINE_HASHTABLE(areas, AFL_HLIST_BITS);
-static DEFINE_SPINLOCK(areas_lock);
+static DEFINE_RWLOCK(areas_lock);
 
 static void afl_get_area(struct afl_area* area)
 {
@@ -38,8 +38,9 @@ static void afl_get_area(struct afl_area* area)
 static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
 {
 	struct afl_area* area = NULL;
+	unsigned long flags;
 
-	spin_lock(&areas_lock);
+	read_lock_irqsave(&areas_lock, flags);
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
 		if (area->task == task) {
 			afl_get_area(area);
@@ -50,7 +51,7 @@ static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
 	debug("task not found.");
 	area = NULL;
  out:
-	spin_unlock(&areas_lock);
+	read_unlock_irqrestore(&areas_lock, flags);
 	return area;
 }
 
@@ -136,9 +137,6 @@ static bool afl_task_in_hlist(const struct task_struct* task)
 
 	afl_func_entry();
 
-	if (unlikely(!spin_is_locked(&areas_lock)))
-		err("called without areas_lock held.");
-
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
 		if (area->task == task)
 			return true;
@@ -192,11 +190,12 @@ static int afl_mmap(struct file* file, struct vm_area_struct* vma)
 
 static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
 {
+	unsigned long flags;
 	afl_func_entry();
 
-	spin_lock(&areas_lock);
+	write_lock_irqsave(&areas_lock, flags);
 	if (afl_task_in_hlist(task)) {
-		spin_unlock(&areas_lock);
+		write_unlock_irqrestore(&areas_lock, flags);
 		err("area already allocated for task \"%s\"", task->comm);
 		return -EEXIST;
 	}
@@ -204,24 +203,27 @@ static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
 	area->task = task;
 	hash_add(areas, &area->hlist, hash_ptr(task, AFL_HLIST_BITS));
 
-	spin_unlock(&areas_lock);
+	write_unlock_irqrestore(&areas_lock, flags);
 
-	info("area associated with %s.", task->comm);
+	info("area %p associated with %s.", area, task->comm);
 
 	return 0;
 }
 
 static int afl_remove_area_from_hashmap(struct afl_area* needle)
 {
+	unsigned long flags;
 	afl_func_entry();
 
-	spin_lock(&areas_lock);
+	write_lock_irqsave(&areas_lock, flags);
 	if (hash_hashed(&needle->hlist)) {
-	    hash_del(&needle->hlist);
-	    spin_unlock(&areas_lock);
-	    return 0;
+		info("removing area from hash_map: %p", needle);
+		hash_del(&needle->hlist);
+		write_unlock_irqrestore(&areas_lock, flags);
+		return 0;
 	}
-	spin_unlock(&areas_lock);
+	info("could not remove area from hash_map: %p", needle);
+	write_unlock_irqrestore(&areas_lock, flags);
 	return -ESRCH;
 }
 
@@ -309,16 +311,17 @@ static void afl_free_hashlist(void)
 {
 	struct afl_area *area;
 	struct hlist_node* tmp;
+	unsigned long flags;
 	unsigned int i;
 
 	afl_func_entry();
 
-	spin_lock(&areas_lock);
+	write_lock_irqsave(&areas_lock, flags);
 	hash_for_each_safe(areas, i, tmp, area, hlist) {
 		hash_del(&area->hlist);
 		afl_put_area(area);
 	}
-	spin_unlock(&areas_lock);
+	write_unlock_irqrestore(&areas_lock, flags);
 }
 
 static void __exit afl_exit(void)
