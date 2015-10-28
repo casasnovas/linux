@@ -139,10 +139,8 @@ static bool afl_task_in_hlist(const struct task_struct* task)
 		pr_warn("called without areas_lock held.");
 
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
-		if (area->task == task) {
-			spin_unlock(&areas_lock);
+		if (area->task == task)
 			return true;
-		}
 	}
 	return false;
 }
