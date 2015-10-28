@@ -113,6 +113,7 @@ static struct afl_area* afl_alloc_area(void)
 	if (!(area = kzalloc(sizeof(area), GFP_KERNEL)))
 		goto nomem;
 
+	INIT_HLIST_NODE(&area->hlist);
 	kref_init(&area->kref);
 	area->area = vmalloc_user(AFL_AREA_SIZE);
 	if (!area->area)
