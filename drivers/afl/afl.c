@@ -315,7 +315,7 @@ static void afl_free_hashlist(void)
 
 	spin_lock(&areas_lock);
 	hash_for_each_safe(areas, i, tmp, area, hlist) {
-		hlist_del(&area->hlist);
+		hash_del(&area->hlist);
 		afl_put_area(area);
 	}
 	spin_unlock(&areas_lock);
