@@ -112,7 +112,7 @@ static struct afl_area* afl_alloc_area(void)
 
 	afl_func_entry();
 
-	if (!(area = kzalloc(sizeof(area), GFP_KERNEL)))
+	if (!(area = kzalloc(sizeof(*area), GFP_KERNEL)))
 		goto nomem;
 
 	INIT_HLIST_NODE(&area->hlist);
