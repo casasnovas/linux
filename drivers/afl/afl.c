@@ -213,25 +213,16 @@ static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
 
 static int afl_remove_area_from_hashmap(struct afl_area* needle)
 {
-	struct hlist_node* tmp = NULL;
-	struct afl_area* area = NULL;
-	int bucket;
 	afl_func_entry();
 
 	spin_lock(&areas_lock);
-	hash_for_each_safe(areas, bucket, tmp, area, hlist) {
-		if (area == needle) {
-			debug("deleting from hashmap");
-			hash_del(&area->hlist);
-			goto found;
-		}
+	if (hash_hashed(&needle->hlist)) {
+	    hash_del(&needle->hlist);
+	    spin_unlock(&areas_lock);
+	    return 0;
 	}
-	debug("nothing to delete from hashmap.");
 	spin_unlock(&areas_lock);
 	return -ESRCH;
- found:
-	spin_unlock(&areas_lock);
-	return 0;
 }
 
 static int afl_disassoc_area(struct afl_area* area)
