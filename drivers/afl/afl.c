@@ -25,6 +25,7 @@
 #  define afl_func_entry()
 #  define err(...)
 #  define info(...)
+#  define debug(...)
 #endif
 
 static DEFINE_HASHTABLE(areas, AFL_HLIST_BITS);
