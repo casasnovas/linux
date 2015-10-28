@@ -15,11 +15,12 @@
 
 #include "afl.h"
 
-#define AFL_DEBUG
+//#define AFL_DEBUG
 #ifdef AFL_DEBUG
 #  define afl_func_entry() pr_info("[%s:%d] %s called.", current->comm, current->pid, __func__)
-#  define err(msg, ...)	 pr_err( "[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
-#  define info(msg, ...)	 pr_info("[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
+#  define err(msg, ...)	   pr_err( "[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
+#  define info(msg, ...)   pr_info("[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
+#  define debug(msg, ...)  pr_debug("[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
 #else
 #  define afl_func_entry()
 #  define err(...)
@@ -31,6 +32,8 @@ static DEFINE_SPINLOCK(areas_lock);
 
 static void afl_get_area(struct afl_area* area)
 {
+	afl_func_entry();
+
 	kref_get(&area->kref);
 }
 
@@ -44,11 +47,11 @@ static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
 		if (area->task == task) {
 			afl_get_area(area);
-			info("found task");
+			debug("found task");
 			goto out;
 		}
 	}
-	info("task not found.");
+	debug("task not found.");
 	area = NULL;
  out:
 	spin_unlock(&areas_lock);
@@ -57,6 +60,7 @@ static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
 
 static void afl_free_area(struct afl_area* area)
 {
+	afl_func_entry();
 
 	if (area) {
 		vfree(area->area);
@@ -66,11 +70,15 @@ static void afl_free_area(struct afl_area* area)
 
 static void _afl_free_area(struct kref* kref)
 {
+	afl_func_entry();
+
 	afl_free_area(container_of(kref, struct afl_area, kref));
 }
 
 static void afl_put_area(struct afl_area* area)
 {
+	afl_func_entry();
+
 	kref_put(&area->kref, _afl_free_area);
 }
 
@@ -82,7 +90,7 @@ static void afl_maybe_log(unsigned short location)
 
 	area = afl_get_area_from_task(current);
 	if (!area) {
-		pr_debug("not logging due to missing area.");
+		debug("not logging due to missing area.");
 		return;
 	}
 
@@ -121,7 +129,7 @@ static struct afl_area* afl_alloc_area(void)
 	return area;
 
  nomem:
-	pr_err("could not not allocate afl_area.");
+	err("could not not allocate afl_area.");
 	afl_free_area(area);
 	return NULL;
 }
@@ -136,7 +144,7 @@ static bool afl_task_in_hlist(const struct task_struct* task)
 	afl_func_entry();
 
 	if (unlikely(!spin_is_locked(&areas_lock)))
-		pr_warn("called without areas_lock held.");
+		err("called without areas_lock held.");
 
 	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
 		if (area->task == task)
@@ -152,7 +160,7 @@ static struct page* afl_get_page_at_offset(struct afl_area* area, unsigned long 
 	afl_func_entry();
 
 	if (offset > AFL_AREA_SIZE) {
-		pr_err("requested offset bigger than area size: 0x%lx.", offset);
+		err("requested offset bigger than area size: 0x%lx.", offset);
 		return NULL;
 	}
 
@@ -196,7 +204,7 @@ static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
 	spin_lock(&areas_lock);
 	if (afl_task_in_hlist(task)) {
 		spin_unlock(&areas_lock);
-		pr_err("area already allocated for task \"%s\"", task->comm);
+		err("area already allocated for task \"%s\"", task->comm);
 		return -EEXIST;
 	}
 
@@ -220,10 +228,12 @@ static int afl_remove_area_from_hashmap(struct afl_area* needle)
 	spin_lock(&areas_lock);
 	hash_for_each_safe(areas, bucket, tmp, area, hlist) {
 		if (area == needle) {
-			hlist_del(&area->hlist);
+			debug("deleting from hashmap");
+			hash_del(&area->hlist);
 			goto found;
 		}
 	}
+	debug("nothing to delete from hashmap.");
 	spin_unlock(&areas_lock);
 	return -ESRCH;
  found:
@@ -306,7 +316,7 @@ static int __init afl_init(void)
 
 	error = misc_register(&afl_device);
 	if (error < 0)
-		pr_err("could not register misc device.");
+		err("could not register misc device.");
 
 	return error;
 }
