@@ -17,10 +17,3 @@ btrfs-$(CONFIG_BTRFS_FS_CHECK_INTEGRITY) += check-integrity.o
 btrfs-$(CONFIG_BTRFS_FS_RUN_SANITY_TESTS) += tests/free-space-tests.o \
 	tests/extent-buffer-tests.o tests/btrfs-tests.o \
 	tests/extent-io-tests.o tests/inode-tests.o tests/qgroup-tests.o
-
-define afl_cc
-$(1): $(1:.o=.c)
-	/home/quentin/repos/afl-kernel/afl-gcc $$(c_flags) -c $$< -o $$@
-endef
-
-$(foreach btrobj,$(btrfs-y), $(eval $(call afl_cc, fs/btrfs/$(btrobj))))
