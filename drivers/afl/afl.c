@@ -15,7 +15,7 @@
 
 #include "afl.h"
 
-//#define AFL_DEBUG
+#define AFL_DEBUG
 #ifdef AFL_DEBUG
 #  define afl_func_entry() pr_info("[%s:%d] %s called.", current->comm, current->pid, __func__)
 #  define err(msg, ...)	   pr_err( "[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
