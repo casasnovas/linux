@@ -11,7 +11,10 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
+#include <linux/string.h>
 #include <linux/vmalloc.h>
+
+#include <asm/cacheflush.h>
 
 #include "afl.h"
 
@@ -204,6 +207,8 @@ static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
 	unsigned long flags;
 	afl_func_entry();
 
+	memset(area->area, 0, AFL_AREA_SIZE);
+
 	write_lock_irqsave(&areas_lock, flags);
 	if (afl_task_in_hlist(task)) {
 		write_unlock_irqrestore(&areas_lock, flags);
@@ -247,6 +252,13 @@ static int afl_disassoc_area(struct afl_area* area)
 		err("could not disassociat area.");
 	area->task = NULL;
 
+	/**
+	 * Make sure the afl-fuzz sees all previous modification made to
+	 * our area so write pages to physical memory.
+	 */
+	flush_cache_vmap((uunsigned long) area->area,
+			 (unsigned long) area->area + AFL_AREA_SIZE);
+
 	return err;
 }
 
@@ -259,7 +271,7 @@ static long afl_ioctl(struct file* filep, unsigned int cmd, unsigned long parm)
 		return afl_assoc_area(filep->private_data, current);
 	case AFL_CTL_DISASSOC_AREA: /* afls */
 		return afl_disassoc_area(filep->private_data);
-	case AFL_CTL_GET_MMAP_OOFSET:
+	case AFL_CTL_GET_MMAP_OFFSET:
 		return ((struct afl_area*) filep->private_data)->offset;
 	default:
 		return -EINVAL;
