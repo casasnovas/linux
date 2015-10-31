@@ -3,15 +3,12 @@
 
 # ifdef __KERNEL__
 
-# include <linux/sched.h>
-# include <linux/hashtable.h>
-
 #  define AFL_HLIST_BITS (8)
 
 struct afl_area {
-	struct hlist_node         hlist;
+	rwlock_t		  lock;
 	struct kref               kref;
-	const struct task_struct* task;
+	struct task_struct*       task;
 	unsigned long		  offset; /* fake offset within /dev/afl */
 	unsigned short            prev_location;
 	u8*                       area;

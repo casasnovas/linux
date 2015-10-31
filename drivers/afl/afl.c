@@ -18,7 +18,7 @@
 
 #include "afl.h"
 
-#define AFL_DEBUG
+//#define AFL_DEBUG
 #ifdef AFL_DEBUG
 #  define afl_func_entry() pr_info("[%s:%d] %s called.", current->comm, current->pid, __func__)
 #  define err(msg, ...)	   pr_err( "[%s:%d] %s: " msg, current->comm, current->pid, __func__, ## __VA_ARGS__)
@@ -31,32 +31,10 @@
 #  define debug(...)
 #endif
 
-static DEFINE_HASHTABLE(areas, AFL_HLIST_BITS);
-static DEFINE_RWLOCK(areas_lock);
 
 static void afl_get_area(struct afl_area* area)
 {
 	kref_get(&area->kref);
-}
-
-static struct afl_area* afl_get_area_from_task(const struct task_struct* task)
-{
-	struct afl_area* area = NULL;
-	unsigned long flags;
-
-	read_lock_irqsave(&areas_lock, flags);
-	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
-		if (area->task == task) {
-			afl_get_area(area);
-			debug("found task");
-			goto out;
-		}
-	}
-	debug("task not found.");
-	area = NULL;
- out:
-	read_unlock_irqrestore(&areas_lock, flags);
-	return area;
 }
 
 static void afl_free_area(struct afl_area* area)
@@ -83,17 +61,30 @@ static void afl_put_area(struct afl_area* area)
 
 static void afl_maybe_log(unsigned short location)
 {
+	unsigned long flags;
 	struct afl_area* area = NULL;
 
-	area = afl_get_area_from_task(current);
+	spin_lock_irqsave(&current->afl_lock, flags);
+	area = current->afl_area;
+	if (area)
+		afl_get_area(area);
+	spin_unlock_irqrestore(&current->afl_lock, flags);
+
 	if (!area) {
 		debug("not logging due to missing area.");
 		return;
 	}
 
+	read_lock_irqsave(&area->lock, flags);
+	if (area->task != current) {
+		info("not logging, the area has been re-associated.");
+		goto out;
+	}
+
 	area->area[area->prev_location ^ location]++;
 	area->prev_location = location >> 1;
-
+ out:
+	read_unlock_irqrestore(&area->lock, flags);
 	afl_put_area(area);
 }
 
@@ -125,12 +116,12 @@ static struct afl_area* afl_alloc_area(void)
 	if (!(area = kzalloc(sizeof(*area), GFP_KERNEL)))
 		goto nomem;
 
-	INIT_HLIST_NODE(&area->hlist);
-	kref_init(&area->kref);
 	area->area = vmalloc_user(AFL_AREA_SIZE);
 	if (!area->area)
 		goto nomem;
 
+	kref_init(&area->kref);
+	rwlock_init(&area->lock);
 	area->offset = offset;
 	offset += AFL_AREA_SIZE;
 
@@ -140,22 +131,6 @@ static struct afl_area* afl_alloc_area(void)
 	err("could not not allocate afl_area.");
 	afl_free_area(area);
 	return NULL;
-}
-
-/**
- * Must be called with @areas_lock held.
- */
-static bool afl_task_in_hlist(const struct task_struct* task)
-{
-	struct afl_area* area = NULL;
-
-	afl_func_entry();
-
-	hash_for_each_possible(areas, area, hlist, hash_ptr(task, AFL_HLIST_BITS)) {
-		if (area->task == task)
-			return true;
-	}
-	return false;
 }
 
 static struct page* afl_get_page_at_offset(struct afl_area* area, unsigned long offset)
@@ -169,12 +144,8 @@ static struct page* afl_get_page_at_offset(struct afl_area* area, unsigned long 
 		return NULL;
 	}
 
-	afl_get_area(area);
-
 	page = vmalloc_to_page(area->area + offset - area->offset);
 	get_page(page);
-
-	afl_put_area(area);
 
 	return page;
 }
@@ -189,77 +160,97 @@ static int afl_vm_fault(struct vm_area_struct* vma, struct vm_fault* vmf)
 	return 0;
 }
 
-static const struct vm_operations_struct afl_vm_ops = {
-	.fault = afl_vm_fault
-};
-
-static int afl_mmap(struct file* file, struct vm_area_struct* vma)
+static void afl_unmap(struct vm_area_struct* vma)
 {
 	afl_func_entry();
 
+	afl_put_area(vma->vm_file->private_data);
+}
+
+static const struct vm_operations_struct afl_vm_ops = {
+	.fault = afl_vm_fault,
+	.close = afl_unmap,
+};
+
+static int afl_mmap(struct file* filep, struct vm_area_struct* vma)
+{
+	afl_func_entry();
+
+	/* The /dev/afl device drops a reference on close, but the file
+	   descriptor can be closed with the mmaping still alive so we keep
+	   a reference for those.  This is put in afl_unmap(). */
+	afl_get_area(filep->private_data);
 	vma->vm_ops = &afl_vm_ops;
 
 	return 0;
 }
 
-static int afl_assoc_area(struct afl_area* area, const struct task_struct* task)
+static long afl_assoc_area(struct afl_area* area)
 {
 	unsigned long flags;
 	afl_func_entry();
 
+	write_lock_irqsave(&area->lock, flags);
+	area->task = current;
+	write_unlock_irqrestore(&area->lock, flags);
+
 	memset(area->area, 0, AFL_AREA_SIZE);
 
-	write_lock_irqsave(&areas_lock, flags);
-	if (afl_task_in_hlist(task)) {
-		write_unlock_irqrestore(&areas_lock, flags);
-		err("area already allocated for task \"%s\"", task->comm);
-		return -EEXIST;
-	}
+	spin_lock_irqsave(&current->afl_lock, flags);
+	afl_get_area(area);
+	current->afl_area = area;
+	spin_unlock_irqrestore(&current->afl_lock, flags);
 
-	area->task = task;
-	hash_add(areas, &area->hlist, hash_ptr(task, AFL_HLIST_BITS));
-
-	write_unlock_irqrestore(&areas_lock, flags);
-
-	info("area %p associated with %s.", area, task->comm);
+	info("area %p associated with %s.", area, current->comm);
 
 	return 0;
 }
 
-static int afl_remove_area_from_hashmap(struct afl_area* needle)
+void afl_task_release(struct task_struct* tsk)
 {
 	unsigned long flags;
-	afl_func_entry();
+	struct afl_area* area = NULL;
 
-	write_lock_irqsave(&areas_lock, flags);
-	if (hash_hashed(&needle->hlist)) {
-		info("removing area from hash_map: %p", needle);
-		hash_del(&needle->hlist);
-		write_unlock_irqrestore(&areas_lock, flags);
-		return 0;
-	}
-	info("could not remove area from hash_map: %p", needle);
-	write_unlock_irqrestore(&areas_lock, flags);
-	return -ESRCH;
-}
+	spin_lock_irqsave(&tsk->afl_lock, flags);
+	area = tsk->afl_area;
+	if (area)
+		tsk->afl_area = NULL;
+	spin_unlock_irqrestore(&tsk->afl_lock, flags);
 
-static int afl_disassoc_area(struct afl_area* area)
-{
-	int err = 0;
-	afl_func_entry();
+	/* The area was never associated with this task, nothing to do
+	   here. */
+	if (!area)
+		return;
 
-	if ((err = afl_remove_area_from_hashmap(area)))
-		err("could not disassociat area.");
+	write_lock_irqsave(&area->lock, flags);
 	area->task = NULL;
+	write_unlock_irqrestore(&area->lock, flags);
 
-	/**
-	 * Make sure the afl-fuzz sees all previous modification made to
-	 * our area so write pages to physical memory.
-	 */
+	afl_put_area(area);
+}
+EXPORT_SYMBOL(afl_task_release);
+
+static long afl_disassoc_area(struct afl_area* area)
+{
+	unsigned long flags;
+
+	write_lock_irqsave(&area->lock, flags);
+	/* The task might have been freed at this time, so we must not try
+	   to reset its afl_area field to NULL and put the area.  
+
+	   If the task_struct still exists, afl_maybe_log will notice that
+	   the area->task field is different from 'current' and won't write
+	   to the area.  The final afl_put_area() required is done in
+	   afl_task_release(), where we know for sure that the task_struct
+	   hasn't disappeared behind our back and is being torned down. */
+	area->task = NULL;
+	write_unlock_irqrestore(&area->lock, flags);
+
+ 	/* Make sure the afl-fuzz sees all previous modification made to
+           our area so write pages to physical memory. */
 	flush_cache_vmap((uunsigned long) area->area,
 			 (unsigned long) area->area + AFL_AREA_SIZE);
-
-	return err;
+	return 0;
 }
 
 static long afl_ioctl(struct file* filep, unsigned int cmd, unsigned long parm)
@@ -268,8 +259,8 @@ static long afl_ioctl(struct file* filep, unsigned int cmd, unsigned long parm)
 
 	switch (cmd) {
 	case AFL_CTL_ASSOC_AREA: /* aflc */
-		return afl_assoc_area(filep->private_data, current);
-	case AFL_CTL_DISASSOC_AREA: /* afls */
+		return afl_assoc_area(filep->private_data);
+	case AFL_CTL_DISASSOC_AREA: /* aflc */
 		return afl_disassoc_area(filep->private_data);
 	case AFL_CTL_GET_MMAP_OFFSET:
 		return ((struct afl_area*) filep->private_data)->offset;
@@ -296,7 +287,6 @@ static int afl_close(struct inode* inode, struct file* filep)
 {
 	afl_func_entry();
 
-	afl_remove_area_from_hashmap(filep->private_data);
 	afl_put_area(filep->private_data);
 	return 0;
 }
@@ -322,8 +312,6 @@ static int __init afl_init(void)
 
 	afl_func_entry();
 
-	hash_init(areas);
-
 	error = misc_register(&afl_device);
 	if (error < 0)
 		err("could not register misc device.");
@@ -331,30 +319,11 @@ static int __init afl_init(void)
 	return error;
 }
 
-static void afl_free_hashlist(void)
-{
-	struct afl_area *area;
-	struct hlist_node* tmp;
-	unsigned long flags;
-	unsigned int i;
-
-	afl_func_entry();
-
-	write_lock_irqsave(&areas_lock, flags);
-	hash_for_each_safe(areas, i, tmp, area, hlist) {
-		hash_del(&area->hlist);
-		afl_put_area(area);
-	}
-	write_unlock_irqrestore(&areas_lock, flags);
-}
-
 static void __exit afl_exit(void)
 {
 	afl_func_entry();
 
 	misc_deregister(&afl_device);
-
-	afl_free_hashlist();
 }
 
 module_init(afl_init);
