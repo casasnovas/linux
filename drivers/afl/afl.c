@@ -106,11 +106,18 @@ void __afl_maybe_log(void)
 }
 EXPORT_SYMBOL(__afl_maybe_log);
 
+static unsigned long offset;
 static struct afl_area* afl_alloc_area(void)
 {
 	struct afl_area* area = NULL;
 
 	afl_func_entry();
+
+	/* The AFL_GET_OFFSET ioctl returns a long so make sure we're not
+	 * overflowing
+	 */
+	if (offset + AFL_AREA_SIZE > LONG_MAX)
+		goto nomem;
 
 	if (!(area = kzalloc(sizeof(*area), GFP_KERNEL)))
 		goto nomem;
@@ -120,6 +127,9 @@ static struct afl_area* afl_alloc_area(void)
 	area->area = vmalloc_user(AFL_AREA_SIZE);
 	if (!area->area)
 		goto nomem;
+
+	area->offset = offset;
+	offset += AFL_AREA_SIZE;
 
 	return area;
 
@@ -151,14 +161,14 @@ static struct page* afl_get_page_at_offset(struct afl_area* area, unsigned long 
 
 	afl_func_entry();
 
-	if (offset > AFL_AREA_SIZE) {
-		err("requested offset bigger than area size: 0x%lx.", offset);
+	if (offset < area->offset || offset > area->offset + AFL_AREA_SIZE) {
+		err("requested offset out of mapping: 0x%lx.", offset);
 		return NULL;
 	}
 
 	afl_get_area(area);
 
-	page = vmalloc_to_page(area->area + offset);
+	page = vmalloc_to_page(area->area + offset - area->offset);
 	get_page(page);
 
 	afl_put_area(area);
@@ -249,11 +259,12 @@ static long afl_ioctl(struct file* filep, unsigned int cmd, unsigned long parm)
 		return afl_assoc_area(filep->private_data, current);
 	case AFL_CTL_DISASSOC_AREA: /* afls */
 		return afl_disassoc_area(filep->private_data);
+	case AFL_CTL_GET_MMAP_OOFSET:
+		return ((struct afl_area*) filep->private_data)->offset;
 	default:
 		return -EINVAL;
 	}
 }
-
 static int afl_open(struct inode* inode, struct file* filep)
 {
 	struct afl_area* area = NULL;
