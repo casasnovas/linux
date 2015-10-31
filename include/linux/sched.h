@@ -1788,6 +1788,10 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+
+	spinlock_t afl_lock;
+	void* afl_area;
+
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
