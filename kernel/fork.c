@@ -342,9 +342,6 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	if (!tsk)
 		return NULL;
 
-	spin_lock_init(&tsk->afl_lock);
-	tsk->afl_area = NULL;
-
 	ti = alloc_thread_info_node(tsk, node);
 	if (!ti)
 		goto free_tsk;
@@ -352,6 +349,9 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	err = arch_dup_task_struct(tsk, orig);
 	if (err)
 		goto free_ti;
+
+	spin_lock_init(&tsk->afl_lock);
+	tsk->afl_area = NULL;
 
 	tsk->stack = ti;
 #ifdef CONFIG_SECCOMP
