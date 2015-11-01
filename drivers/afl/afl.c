@@ -191,6 +191,10 @@ static long afl_assoc_area(struct afl_area* area)
 	afl_func_entry();
 
 	write_lock_irqsave(&area->lock, flags);
+	if (area->task == current) {
+		write_unlock_irqrestore(&area->lock, flags);
+		return 0;
+	}
 	area->task = current;
 	write_unlock_irqrestore(&area->lock, flags);
 
