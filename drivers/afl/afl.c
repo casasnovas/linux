@@ -167,9 +167,17 @@ static void afl_unmap(struct vm_area_struct* vma)
 	afl_put_area(vma->vm_file->private_data);
 }
 
+static void afl_map_copied(struct vm_area_struct* vma)
+{
+	afl_func_entry();
+
+	afl_get_area(vma->vm_file->private_data);
+}
+
 static const struct vm_operations_struct afl_vm_ops = {
 	.fault = afl_vm_fault,
 	.close = afl_unmap,
+	.open  = afl_map_copied, /* Called on fork()/clone() when the mapping is copied */
 };
 
 static int afl_mmap(struct file* filep, struct vm_area_struct* vma)
