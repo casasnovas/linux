@@ -227,7 +227,8 @@ void afl_task_release(struct task_struct* tsk)
 		return;
 
 	write_lock_irqsave(&area->lock, flags);
-	area->task = NULL;
+	if (area->task == tsk) /* It might have been re-associated.. */
+		area->task = NULL;
 	write_unlock_irqrestore(&area->lock, flags);
 
 	afl_put_area(area);
