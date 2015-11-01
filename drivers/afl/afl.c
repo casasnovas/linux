@@ -174,12 +174,17 @@ static const struct vm_operations_struct afl_vm_ops = {
 
 static int afl_mmap(struct file* filep, struct vm_area_struct* vma)
 {
+	struct afl_area* area = vma->vm_file->private_data;
 	afl_func_entry();
+
+	if (vma->vm_pgoff << PAGE_SHIFT != area->offset ||
+	    vma->vm_end - vma->vm_start != AFL_AREA_SIZE)
+		return -EFAULT;
 
 	/* The /dev/afl device drops a reference on close, but the file
 	   descriptor can be closed with the mmaping still alive so we keep
 	   a reference for those.  This is put in afl_unmap(). */
-	afl_get_area(filep->private_data);
+	afl_get_area(area);
 	vma->vm_ops = &afl_vm_ops;
 
 	return 0;
