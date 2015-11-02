@@ -619,7 +619,8 @@ else
 endif
 
 ifneq ($(PLUGINCC),)
-  FUZZ_INSTRUMENT_PLUGIN_CFLAGS := -fplugin=$(objtree)/tools/gcc/fuzz_instrument.so
+  FUZZ_INSTRUMENT_PLUGIN_CFLAGS := -fplugin=$(objtree)/tools/gcc/fuzz_instrumendt.so
+  export FUZZ_INSTRUMENT_PLUGIN_CFLAGS
   GCC_PLUGINS_CFLAGS :=
   export PLUGINCC GCC_PLUGINS_CFLAGS
   ifeq ($(KBUILD_EXTMOD),)
