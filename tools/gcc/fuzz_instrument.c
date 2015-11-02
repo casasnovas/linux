@@ -109,7 +109,7 @@ public:
   {}
 
   opt_pass * clone () { return new pass_fuzz (m_ctxt); }
-  virtual bool gate (function *) { return fuzzing_coverage_flag; }
+  virtual bool gate (function *) { return true; }
   virtual unsigned int execute (function *) { return fuzz_pass (); }
 };
 
