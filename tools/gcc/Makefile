@@ -7,7 +7,7 @@ HOST_EXTRACFLAGS += -I$(GCCPLUGINS_DIR)/include -I$(src)
 export HOST_EXTRACFLAGS
 else
 HOSTLIBS := hostcxxlibs
-HOST_EXTRACXXFLAGS += -I$(GCCPLUGINS_DIR)/include -I$(src)
+HOST_EXTRACXXFLAGS += -I$(GCCPLUGINS_DIR)/include -I$(src) -fno-rtti
 export HOST_EXTRACXXFLAGS
 endif
 
