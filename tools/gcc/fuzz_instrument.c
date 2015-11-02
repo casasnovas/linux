@@ -125,7 +125,7 @@ int plugin_init(plugin_name_args* info, plugin_gcc_version* ver)
 {
 	struct register_pass_info new_pass = {
 		.pass = make_pass(g),
-		.reference_pass_name = "pass_lower_complex_O0",
+		.reference_pass_name = "cplxlower0",
 		.ref_pass_instance_number = 0,
 		.pos_op = PASS_POS_INSERT_AFTER,
 	};
