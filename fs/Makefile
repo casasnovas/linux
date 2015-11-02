@@ -38,15 +38,10 @@ obj-$(CONFIG_BINFMT_SCRIPT)	+= binfmt_script.o
 obj-$(CONFIG_BINFMT_ELF)	+= binfmt_elf.o
 obj-$(CONFIG_COMPAT_BINFMT_ELF)	+= compat_binfmt_elf.o
 
-define afl_cc
-$(1): $(1:.o=.c)
-	/home/quentin/repos/afl-kernel/afl-gcc $$(c_flags) -c $$< -o $$@
-endef
-
 afl_objs  = binfmt_elf.o
 afl_objs += compat_binfmt_elf.o
 
-$(foreach obj,$(afl_objs), $(eval $(call afl_cc, fs/$(obj))))
+$(foreach obj,$(afl_objs), $(eval CFLAGS_$(obj)=$(FUZZ_INSTRUMENT_PLUGIN_CFLAGS)))
 
 
 obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
