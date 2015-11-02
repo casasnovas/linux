@@ -68,7 +68,7 @@ unsigned fuzz_pass (void)
 {
   basic_block bb;
   gimple_stmt_iterator gsi;
-  gimple *stmt, *f;
+  gimple stmt, f;
 
   FOR_EACH_BB_FN (bb, cfun)
     {
