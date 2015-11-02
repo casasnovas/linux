@@ -88,15 +88,12 @@ static void afl_maybe_log(unsigned short location)
 	afl_put_area(area);
 }
 
-/**
- * Entry point of instrumented branches, the hash is in register %rcx.
- */
-void __afl_maybe_log(void)
+void __fuzz_coverage(void)
 {
-	unsigned short cx;
-	asm volatile("": "=c" (cx));
+	unsigned long caller_addr = _RET_IP_;
+	unsigned short caller_hash = caller_addr & ((sizeof(unsigned short) - 1) << 8);
 
-	afl_maybe_log(cx);
+	afl_maybe_log(caller_hash);
 }
 EXPORT_SYMBOL(__afl_maybe_log);
 
