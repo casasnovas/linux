@@ -91,7 +91,7 @@ static void afl_maybe_log(unsigned short location)
 void __fuzz_coverage(void)
 {
 	unsigned long caller_addr = _RET_IP_;
-	unsigned short caller_hash = caller_addr & ((sizeof(unsigned short) - 1) << 8);
+	unsigned short caller_hash = (unsigned short) caller_addr;
 
 	afl_maybe_log(caller_hash);
 }
