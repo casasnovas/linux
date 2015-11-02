@@ -22,6 +22,6 @@ extern void __afl_maybe_log(void);
 # define AFL_CTL_DISASSOC_AREA (43)
 # define AFL_CTL_GET_MMAP_OFFSET (44)
 
-# define AFL_AREA_SIZE (1 << (sizeof(unsigned short) << BITS_PER_BYTE))
+# define AFL_AREA_SIZE (1LU << (sizeof(unsigned short) * BITS_PER_BYTE))
 
 #endif /* !AFL_H_ */
