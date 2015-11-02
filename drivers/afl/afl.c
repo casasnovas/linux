@@ -95,7 +95,7 @@ void __fuzz_coverage(void)
 
 	afl_maybe_log(caller_hash);
 }
-EXPORT_SYMBOL(__afl_maybe_log);
+EXPORT_SYMBOL(__fuzz_coverage);
 
 static unsigned long offset;
 static struct afl_area* afl_alloc_area(void)
