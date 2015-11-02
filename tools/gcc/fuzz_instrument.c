@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "tree-iterator.h"
 #include "stringpool.h"
+#include "context.h"
 
 int plugin_is_GPL_compatible;
 
