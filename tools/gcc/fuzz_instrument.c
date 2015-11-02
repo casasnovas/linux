@@ -130,5 +130,5 @@ int plugin_init(plugin_name_args* info, plugin_gcc_version* ver)
 		.pos_op = PASS_POS_INSERT_AFTER,
 	};
 	
-	register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP, &new_pass, NULL);
+	register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &new_pass);
 }
