@@ -41,6 +41,7 @@ obj-$(CONFIG_COMPAT_BINFMT_ELF)	+= compat_binfmt_elf.o
 
 afl_objs  = binfmt_elf.o
 afl_objs += compat_binfmt_elf.o
+afl_objs += compat_binfmt_aout.o
 
 $(foreach obj,$(afl_objs), $(eval CFLAGS_$(obj)=$(FUZZ_INSTRUMENT_PLUGIN_CFLAGS)))
 

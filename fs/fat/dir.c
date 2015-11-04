@@ -332,8 +332,8 @@ parse_long:
 		goto parse_long;
 	if (IS_FREE((*de)->name) || ((*de)->attr & ATTR_VOLUME))
 		return PARSE_INVALID;
-	if (fat_checksum((*de)->name) != alias_checksum)
-		*nr_slots = 0;
+	/* if (fat_checksum((*de)->name) != alias_checksum) */
+	/* 	*nr_slots = 0; */
 
 	return 0;
 }
