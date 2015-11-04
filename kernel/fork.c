@@ -353,6 +353,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 
 	spin_lock_init(&tsk->afl_lock);
 	tsk->afl_area = NULL;
+	tsk->afl_counter = 0;
 
 	tsk->stack = ti;
 #ifdef CONFIG_SECCOMP

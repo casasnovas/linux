@@ -61,12 +61,12 @@ static void afl_put_area(struct afl_area* area)
 
 static void afl_maybe_log(unsigned short location)
 {
-	struct afl_area* area = NULL;
+	struct afl_area* area = current->afl_area;
 
-	area = current->afl_area;
-	if (!area || in_interrupt())
+	if (current->afl_counter || !area || in_interrupt())
 		return;
 
+	area = current->afl_area;
 	area->area[area->prev_location ^ location]++;
 	area->prev_location = location >> 1;
 }

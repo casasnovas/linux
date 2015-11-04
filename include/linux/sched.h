@@ -1833,6 +1833,7 @@ struct task_struct {
 
 	spinlock_t afl_lock;
 	void* afl_area;
+	unsigned int afl_counter;
 
 /* CPU-specific state of this task */
 	struct thread_struct thread;
