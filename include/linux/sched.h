@@ -1378,6 +1378,9 @@ struct tlbflush_unmap_batch {
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
 	void *stack;
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+	void *lowmem_stack;
+#endif
 	atomic_t usage;
 	unsigned int flags;	/* per process flags, defined below */
 	unsigned int ptrace;
@@ -2269,6 +2272,25 @@ extern u64 sched_clock_cpu(int cpu);
 
 
 extern void sched_clock_init(void);
+
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+static inline void populate_stack(void)
+{
+	struct task_struct *curtask = current;
+	int c;
+	int *ptr = curtask->stack;
+	int *end = curtask->stack + THREAD_SIZE;
+
+	while (ptr < end) {
+		c = *(volatile int *)ptr;
+		ptr += PAGE_SIZE/sizeof(int);
+	}
+}
+#else
+static inline void populate_stack(void)
+{
+}
+#endif
 
 #ifndef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
 static inline void sched_clock_tick(void)

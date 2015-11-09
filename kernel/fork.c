@@ -194,6 +194,48 @@ void thread_info_cache_init(void)
 # endif
 #endif
 
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+static inline struct thread_info *gr_alloc_thread_info_node(struct task_struct *tsk,
+						  int node, void **lowmem_stack)
+{
+	struct page *pages[THREAD_SIZE / PAGE_SIZE];
+	void *ret = NULL;
+	unsigned int i;
+
+	*lowmem_stack = alloc_thread_info_node(tsk, node);
+	if (*lowmem_stack == NULL)
+		goto out;
+
+	for (i = 0; i < THREAD_SIZE / PAGE_SIZE; i++)
+		pages[i] = virt_to_page(*lowmem_stack + (i * PAGE_SIZE));
+	
+	/* use VM_IOREMAP to gain THREAD_SIZE alignment */
+	ret = vmap(pages, THREAD_SIZE / PAGE_SIZE, VM_IOREMAP, PAGE_KERNEL);
+	if (ret == NULL) {
+		free_thread_info(*lowmem_stack);
+		*lowmem_stack = NULL;
+	}
+
+out:
+	return ret;
+}
+
+static inline void gr_free_thread_info(struct task_struct *tsk, struct thread_info *ti)
+{
+	unmap_process_stacks(tsk);
+}
+#else
+static inline struct thread_info *gr_alloc_thread_info_node(struct task_struct *tsk,
+						  int node, void **lowmem_stack)
+{
+	return alloc_thread_info_node(tsk, node);
+}
+static inline void gr_free_thread_info(struct task_struct *tsk, struct thread_info *ti)
+{
+	free_thread_info(ti);
+}
+#endif
+
 /* SLAB cache for signal_struct structures (tsk->signal) */
 static struct kmem_cache *signal_cachep;
 
@@ -212,18 +254,22 @@ struct kmem_cache *vm_area_cachep;
 /* SLAB cache for mm_struct structures (tsk->mm) */
 static struct kmem_cache *mm_cachep;
 
-static void account_kernel_stack(struct thread_info *ti, int account)
+static void account_kernel_stack(struct task_struct *tsk, struct thread_info *ti, int account)
 {
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+	struct zone *zone = page_zone(virt_to_page(tsk->lowmem_stack));
+#else
 	struct zone *zone = page_zone(virt_to_page(ti));
+#endif
 
 	mod_zone_page_state(zone, NR_KERNEL_STACK, account);
 }
 
 void free_task(struct task_struct *tsk)
 {
-	account_kernel_stack(tsk->stack, -1);
+	account_kernel_stack(tsk, tsk->stack, -1);
 	arch_release_thread_info(tsk->stack);
-	free_thread_info(tsk->stack);
+	gr_free_thread_info(tsk, tsk->stack);
 	rt_mutex_debug_task_free(tsk);
 	ftrace_graph_exit_task(tsk);
 	put_seccomp_filter(tsk);
@@ -334,6 +380,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 {
 	struct task_struct *tsk;
 	struct thread_info *ti;
+	void *lowmem_stack;
 	int node = tsk_fork_get_node(orig);
 	int err;
 
@@ -341,7 +388,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	if (!tsk)
 		return NULL;
 
-	ti = alloc_thread_info_node(tsk, node);
+	ti = gr_alloc_thread_info_node(tsk, node, &lowmem_stack);
 	if (!ti)
 		goto free_tsk;
 
@@ -350,6 +397,9 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 		goto free_ti;
 
 	tsk->stack = ti;
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+	tsk->lowmem_stack = lowmem_stack;
+#endif
 #ifdef CONFIG_SECCOMP
 	/*
 	 * We must handle setting up seccomp filters once we're under
@@ -366,7 +416,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	set_task_stack_end_magic(tsk);
 
 #ifdef CONFIG_CC_STACKPROTECTOR
-	tsk->stack_canary = get_random_int();
+	tsk->stack_canary = pax_get_random_long();
 #endif
 
 	/*
@@ -380,12 +430,12 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->splice_pipe = NULL;
 	tsk->task_frag.page = NULL;
 
-	account_kernel_stack(ti, 1);
+	account_kernel_stack(tsk, ti, 1);
 
 	return tsk;
 
 free_ti:
-	free_thread_info(ti);
+	gr_free_thread_info(tsk, ti);
 free_tsk:
 	free_task_struct(tsk);
 	return NULL;

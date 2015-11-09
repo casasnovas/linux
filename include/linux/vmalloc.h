@@ -86,6 +86,10 @@ extern void *vmap(struct page **pages, unsigned int count,
 			unsigned long flags, pgprot_t prot);
 extern void vunmap(const void *addr);
 
+#ifdef CONFIG_GRKERNSEC_KSTACKOVERFLOW
+extern void unmap_process_stacks(struct task_struct *task);
+#endif
+
 extern int remap_vmalloc_range_partial(struct vm_area_struct *vma,
 				       unsigned long uaddr, void *kaddr,
 				       unsigned long size);

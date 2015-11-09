@@ -2637,6 +2637,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 		enter_lazy_tlb(oldmm, next);
 	} else
 		switch_mm(oldmm, mm, next);
+		populate_stack();
+	}
 
 	if (!prev->mm) {
 		prev->active_mm = NULL;
@@ -5127,6 +5129,7 @@ void idle_task_exit(void)
 
 	if (mm != &init_mm) {
 		switch_mm(mm, &init_mm, current);
+		populate_stack();
 		finish_arch_post_lock_switch();
 	}
 	mmdrop(mm);
