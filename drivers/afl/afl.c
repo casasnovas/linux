@@ -61,39 +61,19 @@ static void afl_put_area(struct afl_area* area)
 
 static void afl_maybe_log(unsigned short location)
 {
-	unsigned long flags;
 	struct afl_area* area = NULL;
 
-	spin_lock_irqsave(&current->afl_lock, flags);
 	area = current->afl_area;
-	if (area)
-		afl_get_area(area);
-	spin_unlock_irqrestore(&current->afl_lock, flags);
-
-	if (!area) {
-		debug("not logging due to missing area.");
+	if (!area || in_interrupt())
 		return;
-	}
-
-	read_lock_irqsave(&area->lock, flags);
-	if (area->task != current) {
-		info("not logging, the area has been re-associated.");
-		goto out;
-	}
 
 	area->area[area->prev_location ^ location]++;
 	area->prev_location = location >> 1;
- out:
-	read_unlock_irqrestore(&area->lock, flags);
-	afl_put_area(area);
 }
 
 void __fuzz_coverage(void)
 {
-	unsigned long caller_addr = _RET_IP_;
-	unsigned short caller_hash = (unsigned short) caller_addr;
-
-	afl_maybe_log(caller_hash);
+	afl_maybe_log((unsigned short) _RET_IP_);
 }
 EXPORT_SYMBOL(__fuzz_coverage);
 
@@ -200,6 +180,8 @@ static long afl_assoc_area(struct afl_area* area)
 	unsigned long flags;
 	afl_func_entry();
 
+	memset(area->area, 0, AFL_AREA_SIZE);
+
 	write_lock_irqsave(&area->lock, flags);
 	if (area->task == current) {
 		write_unlock_irqrestore(&area->lock, flags);
@@ -208,12 +190,8 @@ static long afl_assoc_area(struct afl_area* area)
 	area->task = current;
 	write_unlock_irqrestore(&area->lock, flags);
 
-	memset(area->area, 0, AFL_AREA_SIZE);
-
-	spin_lock_irqsave(&current->afl_lock, flags);
 	afl_get_area(area);
 	current->afl_area = area;
-	spin_unlock_irqrestore(&current->afl_lock, flags);
 
 	info("area %p associated with %s.", area, current->comm);
 
@@ -222,26 +200,8 @@ static long afl_assoc_area(struct afl_area* area)
 
 void afl_task_release(struct task_struct* tsk)
 {
-	unsigned long flags;
-	struct afl_area* area = NULL;
-
-	spin_lock_irqsave(&tsk->afl_lock, flags);
-	area = tsk->afl_area;
-	if (area)
-		tsk->afl_area = NULL;
-	spin_unlock_irqrestore(&tsk->afl_lock, flags);
-
-	/* The area was never associated with this task, nothing to do
-	   here. */
-	if (!area)
-		return;
-
-	write_lock_irqsave(&area->lock, flags);
-	if (area->task == tsk) /* It might have been re-associated.. */
-		area->task = NULL;
-	write_unlock_irqrestore(&area->lock, flags);
-
-	afl_put_area(area);
+	if (tsk->afl_area)
+		afl_put_area(tsk->afl_area);
 }
 EXPORT_SYMBOL(afl_task_release);
 
@@ -250,16 +210,12 @@ static long afl_disassoc_area(struct afl_area* area)
 	unsigned long flags;
 
 	write_lock_irqsave(&area->lock, flags);
-	/* The task might have been freed at this time, so we must not try
-	   to reset its afl_area field to NULL and put the area.  
-
-	   If the task_struct still exists, afl_maybe_log will notice that
-	   the area->task field is different from 'current' and won't write
-	   to the area.  The final afl_put_area() required is done in
-	   afl_task_release(), where we know for sure that the task_struct
-	   hasn't disappeared behind our back and is being torned down. */
-	area->task = NULL;
+	if (area->task == current) {
+		area->task = NULL;
+	}
 	write_unlock_irqrestore(&area->lock, flags);
+	current->afl_area = NULL;
+	afl_put_area(area);
 
  	/* Make sure the afl-fuzz sees all previous modification made to
            our area so write pages to physical memory. */
