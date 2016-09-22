@@ -32,7 +32,7 @@ struct kcov {
 	/* The lock protects mode, size, area and t. */
 	spinlock_t		lock;
 	enum kcov_mode		mode;
-	/* Size of arena (in long's for KCOV_MODE_TRACE). */
+	/* Size of arena in bytes. */
 	unsigned		size;
 	/* Coverage buffer shared with user space. */
 	void			*area;
@@ -133,7 +133,7 @@ static int kcov_mmap(struct file *filep, struct vm_area_struct *vma)
 		return -ENOMEM;
 
 	spin_lock(&kcov->lock);
-	size = kcov->size * sizeof(unsigned long);
+	size = kcov->size;
 	if (kcov->mode == KCOV_MODE_DISABLED || vma->vm_pgoff != 0 ||
 	    vma->vm_end - vma->vm_start != size) {
 		res = -EINVAL;
@@ -191,13 +191,11 @@ static int kcov_ioctl_locked(struct kcov *kcov, unsigned int cmd,
 			return -EBUSY;
 		/*
 		 * Size must be at least 2 to hold current position and one PC.
-		 * Later we allocate size * sizeof(unsigned long) memory,
-		 * that must not overflow.
 		 */
 		size = arg;
 		if (size < 2 || size > INT_MAX / sizeof(unsigned long))
 			return -EINVAL;
-		kcov->size = size;
+		kcov->size = size * sizeof(unsigned long);
 		kcov->mode = KCOV_MODE_TRACE;
 		return 0;
 	case KCOV_ENABLE:
@@ -216,7 +214,7 @@ static int kcov_ioctl_locked(struct kcov *kcov, unsigned int cmd,
 			return -EBUSY;
 		t = current;
 		/* Cache in task struct for performance. */
-		t->kcov_size = kcov->size;
+		t->kcov_size = kcov->size / sizeof(unsigned long);
 		t->kcov_area = kcov->area;
 		/* See comment in __sanitizer_cov_trace_pc(). */
 		barrier();
