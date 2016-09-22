@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/hash.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
@@ -76,6 +77,18 @@ void notrace __sanitizer_cov_trace_pc(void)
 			area[pos] = _RET_IP_;
 			WRITE_ONCE(area[0], pos);
 		}
+	} else if (mode == KCOV_MODE_TABLE) {
+		unsigned char *area;
+		unsigned long location;
+
+		/* See above */
+		barrier();
+
+		location = _RET_IP_;
+		area = t->kcov_area;
+
+		++area[(t->kcov_prev_location ^ location) & t->kcov_mask];
+		t->kcov_prev_location = hash_long(location, BITS_PER_LONG);
 	}
 }
 EXPORT_SYMBOL(__sanitizer_cov_trace_pc);
@@ -99,6 +112,7 @@ void kcov_task_init(struct task_struct *t)
 	t->kcov_size = 0;
 	t->kcov_area = NULL;
 	t->kcov = NULL;
+	t->kcov_prev_location = hash_long(0, BITS_PER_LONG);
 }
 
 void kcov_task_exit(struct task_struct *t)
@@ -198,6 +212,23 @@ static int kcov_ioctl_locked(struct kcov *kcov, unsigned int cmd,
 		kcov->size = size * sizeof(unsigned long);
 		kcov->mode = KCOV_MODE_TRACE;
 		return 0;
+	case KCOV_INIT_TABLE:
+		size = arg;
+
+		if (kcov->mode != KCOV_MODE_DISABLED)
+			return -EBUSY;
+
+		/*
+		 * We infer the index in the table buffer from the return
+		 * address of the caller and need a fast way to mask the
+		 * relevant bits.
+		 */
+		if (!is_power_of_2(size))
+			return -EINVAL;
+
+		kcov->size = size;
+		kcov->mode = KCOV_MODE_TABLE;
+		return 0;
 	case KCOV_ENABLE:
 		/*
 		 * Enable coverage for the current task.
@@ -214,8 +245,12 @@ static int kcov_ioctl_locked(struct kcov *kcov, unsigned int cmd,
 			return -EBUSY;
 		t = current;
 		/* Cache in task struct for performance. */
-		t->kcov_size = kcov->size / sizeof(unsigned long);
+		if (kcov->mode == KCOV_MODE_TRACE)
+			t->kcov_size = kcov->size / sizeof(unsigned long);
+		else if (kcov->mode == KCOV_MODE_TABLE)
+			t->kcov_mask = kcov->size - 1;
 		t->kcov_area = kcov->area;
+		t->kcov_prev_location = hash_long(0, BITS_PER_LONG);
 		/* See comment in __sanitizer_cov_trace_pc(). */
 		barrier();
 		WRITE_ONCE(t->kcov_mode, kcov->mode);

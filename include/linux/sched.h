@@ -1919,8 +1919,14 @@ struct task_struct {
 #ifdef CONFIG_KCOV
 	/* Coverage collection mode enabled for this task (0 if disabled). */
 	enum kcov_mode kcov_mode;
-	/* Size of the kcov_area. */
-	unsigned	kcov_size;
+	union {
+		/* Size of the kcov_area. */
+		unsigned kcov_size;
+		/* Mask to fit within kcov_area */
+		unsigned kcov_mask;
+	};
+	/* Hash of previous branch taken, to differentiate A > B from B > A */
+	unsigned long   kcov_prev_location;
 	/* Buffer for coverage collection. */
 	void		*kcov_area;
 	/* kcov desciptor wired with this task or NULL. */
